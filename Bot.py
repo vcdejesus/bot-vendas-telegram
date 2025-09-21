@@ -1,6 +1,7 @@
 import logging
 import os
 import io
+import json # Importa a biblioteca JSON
 import threading
 from datetime import datetime
 from flask import Flask
@@ -26,32 +27,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- CONFIGURAÇÕES DO GOOGLE E TELEGRAM ---
-TELEGRAM_TOKEN = 'SEU_TOKEN_DO_TELEGRAM_AQUI' # COLOQUE SEU TOKEN AQUI NOVAMENTE
-GOOGLE_CREDENTIALS_FILE = 'credentials.json' # O Render encontra o arquivo na mesma pasta
+# --- CONFIGURAÇÕES ---
+TELEGRAM_TOKEN = '8354821073:AAGC1E7x532uZIM_9B9mQsxfqSr_QKWjuu0' # COLOQUE SEU TOKEN AQUI NOVAMENTE
 NOME_DA_PLANILHA = 'Vendas da Loja de Bebidas'
-ID_PASTA_DRIVE = '1B1T-HkE1-M4bCihxbfULjI2WclPhauDm'
+ID_PASTA_DRIVE = '1B1T-HkE-M4bCihxbfULjI2WclPhauDm'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 
-# --- NOVO CÓDIGO PARA O RENDER ---
 app = Flask(__name__)
 @app.route('/')
 def health_check():
     return "Bot está vivo e rodando!", 200
-# --- FIM DO NOVO CÓDIGO ---
 
+# --- LÓGICA DE AUTENTICAÇÃO SEGURA ---
+creds = None
 try:
-    creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS_FILE, scopes=SCOPES)
+    # Lê as credenciais da variável de ambiente
+    google_creds_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+    if google_creds_json is None:
+        raise ValueError("A variável de ambiente GOOGLE_CREDENTIALS_JSON não foi encontrada.")
+    
+    # Converte o texto JSON em um dicionário Python
+    creds_dict = json.loads(google_creds_json)
+    
+    # Cria as credenciais a partir do dicionário
+    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     gc = gspread.authorize(creds)
     drive_service = build('drive', 'v3', credentials=creds)
     logger.info("Autenticação com as APIs do Google bem-sucedida.")
 except Exception as e:
     logger.error(f"Falha na autenticação com o Google: {e}")
-    creds = None
+
+# ... (O RESTANTE DO CÓDIGO PERMANECE IGUAL) ...
 
 FUNCIONARIO, PRODUTO, VALOR, PAGAMENTO = range(4)
 
-# Funções salvar_no_sheets e salvar_no_drive (permanecem exatamente as mesmas de antes)
 def salvar_no_sheets(dados_venda: dict):
     if not creds: return False
     try:
@@ -80,7 +89,6 @@ def salvar_no_drive(dados_venda: dict):
         logger.error(f"Erro ao salvar no Google Drive: {e}")
         return False
 
-# Funções do bot (start, novavenda, etc. permanecem exatamente as mesmas)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Olá! Sou o bot de registro de vendas. Use /novavenda para começar.")
 async def novavenda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -117,7 +125,6 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 def run_bot():
-    """Função que inicia o bot do Telegram."""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("novavenda", novavenda)],
@@ -129,12 +136,8 @@ def run_bot():
     application.run_polling()
 
 if __name__ == "__main__":
-    # Inicia o bot do Telegram em um thread separado
     bot_thread = threading.Thread(target=run_bot)
     bot_thread.daemon = True
     bot_thread.start()
-    
-    # Inicia o servidor Flask (para o Render e UptimeRobot)
-    # A porta é pega da variável de ambiente, padrão do Render
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
